@@ -37,9 +37,13 @@ export default function LoginPage() {
         credentials: 'include',
       })
 
+      // Nếu API trả JSON => parse; nếu API lỡ redirect về HTML (do cache JS cũ) => json() sẽ fail
       const data = (await res.json().catch(() => null)) as null | { ok?: boolean; error?: string }
 
-      if (res.ok && data?.ok) {
+      // Trường hợp OK:
+      // - API mới: {ok:true}
+      // - API cũ: redirect (fetch theo redirect) => res.redirected=true hoặc res.url chứa /dashboard
+      if (res.ok && (data?.ok || res.redirected || res.url.includes('/dashboard'))) {
         window.location.href = '/dashboard'
         return
       }
