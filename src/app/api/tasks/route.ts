@@ -39,7 +39,10 @@ export async function GET(req: Request) {
     q = q.where('status', '==', status)
   }
 
-  const snap = await q.orderBy('createdAt', 'desc').limit(100).get()
+  // NOTE (MVP): Tránh yêu cầu composite index (isArchived + createdAt).
+  // Với Firestore production mode, query where()+orderBy() khác field có thể yêu cầu tạo index,
+  // dẫn đến 500. Để hệ thống chạy ổn ngay, ta bỏ orderBy và để client sort nếu cần.
+  const snap = await q.limit(100).get()
   const tasks = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Record<string, unknown>) }))
   return NextResponse.json({ ok: true, tasks })
 }
