@@ -1,7 +1,7 @@
 /**
- * Tasks API (MVP)
- * - GET: list latest tasks
- * - POST: create task
+ * Tasks API (MVP trong ngày)
+ * - GET: list tasks (filter status)
+ * - POST: create task (full fields tối thiểu)
  */
 
 import { NextResponse } from 'next/server'
@@ -26,16 +26,21 @@ export async function GET(req: Request) {
   if (!token) return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
 
   const sess = await verifySession(token)
+  const url = new URL(req.url)
+  const status = url.searchParams.get('status')
 
-  const snap = await db()
+  let q: FirebaseFirestore.Query = db()
     .collection('orgs')
     .doc(sess.orgId)
     .collection('tasks')
-    .orderBy('createdAt', 'desc')
-    .limit(50)
-    .get()
+    .where('isArchived', '==', false)
 
-  const tasks = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }))
+  if (status) {
+    q = q.where('status', '==', status)
+  }
+
+  const snap = await q.orderBy('createdAt', 'desc').limit(100).get()
+  const tasks = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Record<string, unknown>) }))
   return NextResponse.json({ ok: true, tasks })
 }
 
@@ -45,10 +50,16 @@ export async function POST(req: Request) {
 
   const sess = await verifySession(token)
   const body = await req.json().catch(() => ({}))
+
   const title = String(body.title || '').trim()
   if (!title) return NextResponse.json({ ok: false, error: 'missing_title' }, { status: 400 })
 
+  const description = typeof body.description === 'string' ? body.description : ''
+  const priority = (String(body.priority || 'MEDIUM') as string).toUpperCase()
+  const dueDate = body.dueDate ? new Date(String(body.dueDate)) : null
+
   const taskId = nanoid()
+
   await db()
     .collection('orgs')
     .doc(sess.orgId)
@@ -56,7 +67,11 @@ export async function POST(req: Request) {
     .doc(taskId)
     .set({
       title,
+      description,
       status: 'TODO',
+      priority,
+      dueDate,
+      completedAt: null,
       createdAt: new Date(),
       updatedAt: new Date(),
       createdBy: sess.userId,

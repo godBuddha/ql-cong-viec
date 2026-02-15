@@ -36,17 +36,22 @@ export async function POST(req: Request) {
   }
 
   const doc = snap.docs[0]
-  const user = doc.data() as any
+  const user = doc.data() as { passwordHash?: string; role?: string; departmentId?: string | null }
 
   const ok = await verifyPassword(password, String(user.passwordHash || ''))
   if (!ok) {
     return NextResponse.redirect(new URL('/login', req.url))
   }
 
+  const roleRaw = String(user.role || 'MEMBER').toUpperCase()
+  const role = (roleRaw === 'OWNER' || roleRaw === 'LEADER' || roleRaw === 'MEMBER'
+    ? roleRaw
+    : 'MEMBER') as 'OWNER' | 'LEADER' | 'MEMBER'
+
   const token = await signSession({
     userId: doc.id,
     orgId,
-    role: user.role || 'MEMBER',
+    role,
     departmentId: user.departmentId || null,
   })
 
