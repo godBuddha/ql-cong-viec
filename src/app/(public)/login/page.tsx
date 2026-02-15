@@ -27,19 +27,24 @@ export default function LoginPage() {
 
       const res = await fetch('/api/auth/login', {
         method: 'POST',
-        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        headers: {
+          'content-type': 'application/x-www-form-urlencoded',
+          // Đánh dấu đây là request từ fetch để API trả JSON (không redirect)
+          'x-oc-fetch': '1',
+          accept: 'application/json',
+        },
         body: form.toString(),
         credentials: 'include',
-        redirect: 'follow',
       })
 
-      // Nếu login ok, server sẽ redirect sang /dashboard
-      if (res.ok) {
+      const data = (await res.json().catch(() => null)) as null | { ok?: boolean; error?: string }
+
+      if (res.ok && data?.ok) {
         window.location.href = '/dashboard'
         return
       }
 
-      setError('Đăng nhập thất bại. Kiểm tra lại username/password.')
+      setError(data?.error ? String(data.error) : 'Đăng nhập thất bại. Kiểm tra lại username/password.')
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {

@@ -13,12 +13,36 @@ import { SESSION_COOKIE_NAME, signSession } from '@/lib/auth/session'
 export const runtime = 'nodejs'
 
 export async function POST(req: Request) {
-  const form = await req.formData()
-  const username = String(form.get('username') || '').trim().toLowerCase()
-  const password = String(form.get('password') || '')
+  // Hỗ trợ cả:
+  // - Browser form submit (multipart/form-data)
+  // - fetch() x-www-form-urlencoded
+  // - (tuỳ chọn) JSON
+  const ct = (req.headers.get('content-type') || '').toLowerCase()
+
+  let username = ''
+  let password = ''
+
+  if (ct.includes('application/x-www-form-urlencoded')) {
+    const text = await req.text()
+    const params = new URLSearchParams(text)
+    username = String(params.get('username') || '').trim().toLowerCase()
+    password = String(params.get('password') || '')
+  } else if (ct.includes('application/json')) {
+    const body = (await req.json().catch(() => ({}))) as { username?: unknown; password?: unknown }
+    username = String(body.username || '').trim().toLowerCase()
+    password = String(body.password || '')
+  } else {
+    const form = await req.formData()
+    username = String(form.get('username') || '').trim().toLowerCase()
+    password = String(form.get('password') || '')
+  }
+
+  const wantJson = req.headers.get('x-oc-fetch') === '1' || (req.headers.get('accept') || '').includes('application/json')
 
   if (!username || !password) {
-    return NextResponse.redirect(new URL('/login', req.url))
+    return wantJson
+      ? NextResponse.json({ ok: false, error: 'missing_username_or_password' }, { status: 400 })
+      : NextResponse.redirect(new URL('/login', req.url))
   }
 
   const orgId = 'default'
@@ -32,7 +56,9 @@ export async function POST(req: Request) {
     .get()
 
   if (snap.empty) {
-    return NextResponse.redirect(new URL('/login', req.url))
+    return wantJson
+      ? NextResponse.json({ ok: false, error: 'invalid_credentials' }, { status: 401 })
+      : NextResponse.redirect(new URL('/login', req.url))
   }
 
   const doc = snap.docs[0]
@@ -40,7 +66,9 @@ export async function POST(req: Request) {
 
   const ok = await verifyPassword(password, String(user.passwordHash || ''))
   if (!ok) {
-    return NextResponse.redirect(new URL('/login', req.url))
+    return wantJson
+      ? NextResponse.json({ ok: false, error: 'invalid_credentials' }, { status: 401 })
+      : NextResponse.redirect(new URL('/login', req.url))
   }
 
   const roleRaw = String(user.role || 'MEMBER').toUpperCase()
@@ -55,7 +83,10 @@ export async function POST(req: Request) {
     departmentId: user.departmentId || null,
   })
 
-  const res = NextResponse.redirect(new URL('/dashboard', req.url))
+  const res = wantJson
+    ? NextResponse.json({ ok: true })
+    : NextResponse.redirect(new URL('/dashboard', req.url))
+
   res.cookies.set(SESSION_COOKIE_NAME, token, {
     httpOnly: true,
     secure: true,
@@ -63,5 +94,6 @@ export async function POST(req: Request) {
     path: '/',
     maxAge: 60 * 60 * 24 * 7,
   })
+
   return res
 }
